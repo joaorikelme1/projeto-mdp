@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Congregações — Mensageiros da Paz</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<script src="js/core.js"></script>
+<script>THEME.init();</script>
+<div id="page-root"></div>
+
+<div class="modal-overlay" id="modal-cong">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-c-title">Nova Congregação</h2>
+      <button class="modal-close" onclick="closeModal('modal-cong')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div id="c-error" class="alert alert-danger" style="display:none"></div>
+      <input type="hidden" id="c-id">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>Nome *</label>
+          <input type="text" id="c-nome" placeholder="Nome da congregação">
+        </div>
+        <div class="form-group full">
+          <label>Cidade</label>
+          <input type="text" id="c-cidade" placeholder="Cidade">
+        </div>
+        <div class="form-group full">
+          <label>Observação</label>
+          <textarea id="c-obs" placeholder="Observação..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-cong')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveCong()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+AUTH.require(); seedIfEmpty();
+let editId = null;
+
+function calcStats(congNome) {
+  const ufest = DB.get(KEYS.UNIFORME_FEST).filter(u=>u.congregacao===congNome);
+  const upan  = DB.get(KEYS.UNIFORME_PAN).filter(u=>u.congregacao===congNome);
+  const mulh  = DB.get(KEYS.MULHERES).filter(m=>m.congregacao===congNome);
+  const arrec = [...ufest,...upan].reduce((s,u)=>s+(u.pago||0),0);
+  return { mulheres: mulh.length, arrec };
+}
+
+function render() {
+  const data = DB.get(KEYS.CONGREGACOES);
+  const tbody = document.getElementById('tb-cong');
+  if (!tbody) return;
+  document.getElementById('lbl-count').textContent = data.length;
+
+  if (data.length===0) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="es-icon"></div><h3>Nenhuma congregação</h3></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = data.map(c=>{
+    const st = calcStats(c.nome);
+    return `<tr>
+      <td style="font-weight:700;font-size:15px">${c.nome}</td>
+      <td>${c.cidade||'—'}</td>
+      <td style="text-align:center"><span class="badge badge-blue">${st.mulheres}</span></td>
+      <td style="font-weight:600;color:var(--success)">${formatMoney(st.arrec)}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm btn-icon" onclick="editCong('${c.id}')" title="Editar"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="btn btn-danger btn-sm btn-icon" onclick="deleteCong('${c.id}')" title="Excluir" style="margin-left:4px">Excluir</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function buildPage() {
+  document.getElementById('page-root').innerHTML = `
+  <div class="app-layout">
+    ${renderSidebar()}
+    <main class="main-content">
+      <div class="page-header">
+        <h1 class="page-title"> Congregações</h1>
+        <p class="page-subtitle">Gerencie as congregações e veja o resumo financeiro por grupo</p>
+      </div>
+      <div class="stats-grid" style="grid-template-columns:repeat(1,200px);margin-bottom:20px">
+        <div class="stat-card purple"><span class="stat-icon"></span><span class="stat-value" id="lbl-count">0</span><div class="stat-label">Congregações</div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Lista de Congregações</h2>
+          <button class="btn btn-primary" onclick="newCong()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> + Nova Congregação</button>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Nome</th><th>Cidade</th><th>Mulheres</th><th>Arrecadado (Unif.)</th><th>Ações</th></tr></thead>
+            <tbody id="tb-cong"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>`;
+  setActiveNav();
+  render();
+}
+
+function newCong() {
+  editId = null;
+  document.getElementById('modal-c-title').textContent = 'Nova Congregação';
+  ['c-id','c-nome','c-cidade','c-obs'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('c-error').style.display='none';
+  openModal('modal-cong');
+}
+
+function editCong(id) {
+  const c = DB.get(KEYS.CONGREGACOES).find(x=>x.id===id);
+  if (!c) return;
+  editId = id;
+  document.getElementById('modal-c-title').textContent = 'Editar Congregação';
+  document.getElementById('c-id').value   = c.id;
+  document.getElementById('c-nome').value = c.nome;
+  document.getElementById('c-cidade').value = c.cidade||'';
+  document.getElementById('c-obs').value  = c.obs||'';
+  document.getElementById('c-error').style.display='none';
+  openModal('modal-cong');
+}
+
+function deleteCong(id) {
+  if (!confirm2('Excluir esta congregação? Mulheres vinculadas não serão excluídas.')) return;
+  LOG.add('delete','Congregação excluída','Congregações');
+  DB.set(KEYS.CONGREGACOES, DB.get(KEYS.CONGREGACOES).filter(x=>x.id!==id));
+  render();
+  toast('Congregação excluída.','warning');
+}
+
+function saveCong() {
+  const nome   = document.getElementById('c-nome').value.trim();
+  const cidade = document.getElementById('c-cidade').value.trim();
+  const obs    = document.getElementById('c-obs').value.trim();
+  const err    = document.getElementById('c-error');
+  function showErr(m){err.innerHTML=`<span></span><span>${m}</span>`;err.style.display='flex';}
+  if (!nome) return showErr('Informe o nome da congregação.');
+
+  const rec = { id: editId||DB.genId(), nome, cidade, obs, ativa:true };
+  const all = DB.get(KEYS.CONGREGACOES);
+  if (!editId && all.some(x=>x.nome.toLowerCase()===nome.toLowerCase())) return showErr('Congregação já cadastrada.');
+  if (editId) { const idx=all.findIndex(x=>x.id===editId); all[idx]=rec; }
+  else { all.push(rec); }
+  LOG.add(editId?'update':'create',`Congregação "${nome}" ${editId?'atualizada':'criada'}`,'Congregações');
+  DB.set(KEYS.CONGREGACOES, all);
+  closeModal('modal-cong');
+  render();
+  toast(editId?'Congregação atualizada!':'Congregação cadastrada!');
+}
+
+buildPage();
+</script>
+</body>
+</html>

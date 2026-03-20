@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jovens — Mensageiros da Paz</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<script src="js/core.js"></script>
+<script>THEME.init();</script>
+<div id="page-root"></div>
+
+<div class="modal-overlay" id="modal-mulh">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-m-title">Novo Jovem</h2>
+      <button class="modal-close" onclick="closeModal('modal-mulh')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div id="m-error" class="alert alert-danger" style="display:none"></div>
+      <input type="hidden" id="m-id">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>Nome Completo *</label>
+          <input type="text" id="m-nome" placeholder="Nome completo">
+        </div>
+        <div class="form-group">
+          <label>Congregação *</label>
+          <select id="m-cong"></select>
+        </div>
+        <div class="form-group">
+          <label>Telefone</label>
+          <input type="text" id="m-tel" placeholder="(00) 00000-0000">
+        </div>
+        <div class="form-group full">
+          <label>Observação</label>
+          <textarea id="m-obs" placeholder="Observação..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-mulh')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveMulher()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+AUTH.require(); seedIfEmpty();
+let editId = null;
+
+function loadCongs(selected='') {
+  const congs = DB.get(KEYS.CONGREGACOES);
+  document.getElementById('m-cong').innerHTML =
+    congs.map(c=>`<option value="${c.nome}" ${c.nome===selected?'selected':''}>${c.nome}</option>`).join('');
+}
+
+function render() {
+  const data = DB.get(KEYS.MULHERES);
+  const filCong  = document.getElementById('fil-cong')?.value||'';
+  const filBusca = document.getElementById('fil-busca')?.value.toLowerCase()||'';
+
+  const filtradas = data.filter(m=>{
+    if (filCong && m.congregacao!==filCong) return false;
+    if (filBusca && !m.nome.toLowerCase().includes(filBusca)) return false;
+    return true;
+  }).sort((a,b)=>a.nome.localeCompare(b.nome));
+
+  document.getElementById('lbl-count').textContent = filtradas.length;
+
+  const tbody = document.getElementById('tb-mulh');
+  if (!tbody) return;
+  if (filtradas.length===0) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="es-icon"></div><h3>Nenhum jovem cadastrado</h3></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = filtradas.map((m,i)=>`
+    <tr>
+      <td style="color:var(--text-muted);font-size:12px">${i+1}</td>
+      <td style="font-weight:600">${m.nome}</td>
+      <td><span class="badge badge-purple">${m.congregacao}</span></td>
+      <td>${m.telefone||'—'}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm btn-icon" onclick="editMulher('${m.id}')" title="Editar"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="btn btn-danger btn-sm btn-icon" onclick="deleteMulher('${m.id}')" title="Excluir" style="margin-left:4px">Excluir</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function buildPage() {
+  const congs = DB.get(KEYS.CONGREGACOES);
+  document.getElementById('page-root').innerHTML = `
+  <div class="app-layout">
+    ${renderSidebar()}
+    <main class="main-content">
+      <div class="page-header">
+        <h1 class="page-title"> Jovens Cadastrados</h1>
+        <p class="page-subtitle">Controle de participantes por congregação</p>
+      </div>
+      <div class="stats-grid" style="grid-template-columns:repeat(1,200px);margin-bottom:20px">
+        <div class="stat-card blue"><span class="stat-icon"></span><span class="stat-value" id="lbl-count">0</span><div class="stat-label">Total Cadastrados</div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Lista de Jovens</h2>
+          <button class="btn btn-primary" onclick="newMulher()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> + Novo Jovem</button>
+        </div>
+        <div class="filter-bar">
+          <div class="form-group"><label>Buscar</label><input type="text" id="fil-busca" placeholder="Nome..." oninput="render()"></div>
+          <div class="form-group"><label>Congregação</label>
+            <select id="fil-cong" onchange="render()">
+              <option value="">Todas</option>
+              ${congs.map(c=>`<option>${c.nome}</option>`).join('')}
+            </select>
+          </div>
+          <button class="btn btn-ghost btn-sm" style="align-self:flex-end" onclick="clearFil()">↺</button>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>#</th><th>Nome</th><th>Congregação</th><th>Telefone</th><th>Ações</th></tr></thead>
+            <tbody id="tb-mulh"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>`;
+  setActiveNav();
+  render();
+}
+
+function newMulher() {
+  editId = null;
+  document.getElementById('modal-m-title').textContent = 'Novo Jovem';
+  ['m-id','m-nome','m-tel','m-obs'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('m-error').style.display='none';
+  loadCongs();
+  openModal('modal-mulh');
+}
+
+function editMulher(id) {
+  const m = DB.get(KEYS.MULHERES).find(x=>x.id===id);
+  if (!m) return;
+  editId = id;
+  document.getElementById('modal-m-title').textContent = 'Editar Jovem';
+  document.getElementById('m-id').value  = m.id;
+  document.getElementById('m-nome').value= m.nome;
+  document.getElementById('m-tel').value = m.telefone||'';
+  document.getElementById('m-obs').value = m.obs||'';
+  document.getElementById('m-error').style.display='none';
+  loadCongs(m.congregacao);
+  openModal('modal-mulh');
+}
+
+function deleteMulher(id) {
+  if (!confirm2('Excluir este jovem?')) return;
+  LOG.add('delete','Cadastro de jovem excluído','Mulheres');
+  DB.set(KEYS.MULHERES, DB.get(KEYS.MULHERES).filter(x=>x.id!==id));
+  render();
+  toast('Registro excluído.','warning');
+}
+
+function saveMulher() {
+  const nome = document.getElementById('m-nome').value.trim();
+  const cong = document.getElementById('m-cong').value;
+  const tel  = document.getElementById('m-tel').value.trim();
+  const obs  = document.getElementById('m-obs').value.trim();
+  const err  = document.getElementById('m-error');
+  function showErr(m){err.innerHTML=`<span></span><span>${m}</span>`;err.style.display='flex';}
+  if (!nome) return showErr('Informe o nome.');
+
+  const rec = { id: editId||DB.genId(), nome, congregacao:cong, telefone:tel, obs };
+  const all = DB.get(KEYS.MULHERES);
+  if (editId) { const idx=all.findIndex(x=>x.id===editId); all[idx]=rec; }
+  else { all.push(rec); }
+  LOG.add(editId?'update':'create',`Mulher "${nome}" ${editId?'atualizada':'cadastrada'}`,'Mulheres');
+  DB.set(KEYS.MULHERES, all);
+  closeModal('modal-mulh');
+  render();
+  toast(editId?'Cadastro atualizado!':'Jovem cadastrado!');
+}
+
+function clearFil() {
+  ['fil-busca','fil-cong'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  render();
+}
+
+buildPage();
+</script>
+</body>
+</html>

@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vendas — Mensageiros da Paz</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<script src="js/core.js"></script>
+<script>THEME.init();</script>
+<div id="page-root"></div>
+
+<div class="modal-overlay" id="modal-venda">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-v-title">Nova Venda</h2>
+      <button class="modal-close" onclick="closeModal('modal-venda')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div id="v-error" class="alert alert-danger" style="display:none"></div>
+      <input type="hidden" id="v-id">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Data *</label>
+          <input type="date" id="v-data">
+        </div>
+        <div class="form-group">
+          <label>Produto *</label>
+          <select id="v-produto" onchange="calcVenda()">
+            <option>Pamonha</option>
+            <option>Pão</option>
+            <option>Bolo</option>
+            <option>Refrigerante</option>
+            <option>Outros</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Quantidade *</label>
+          <input type="number" id="v-qtd" min="1" step="1" value="1" oninput="calcVenda()">
+        </div>
+        <div class="form-group">
+          <label>Valor Unitário (R$) *</label>
+          <input type="number" id="v-unit" min="0.01" step="0.01" placeholder="0,00" oninput="calcVenda()">
+        </div>
+        <div class="form-group">
+          <label>Total</label>
+          <input type="text" id="v-total-display" readonly style="color:var(--accent);font-weight:700">
+        </div>
+        <div class="form-group">
+          <label>Forma de Pagamento</label>
+          <select id="v-forma">
+            <option value="pix">PIX</option>
+            <option value="dinheiro">Dinheiro</option>
+            <option value="misto">Misto</option>
+          </select>
+        </div>
+        <div class="form-group full">
+          <label>Observação</label>
+          <textarea id="v-obs" placeholder="Observação..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-venda')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveVenda()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+AUTH.require(); seedIfEmpty();
+let editId = null;
+
+function calcVenda() {
+  const qtd  = parseFloat(document.getElementById('v-qtd').value)||0;
+  const unit = parseFloat(document.getElementById('v-unit').value)||0;
+  document.getElementById('v-total-display').value = formatMoney(qtd*unit);
+}
+
+function render() {
+  const data = DB.get(KEYS.VENDAS);
+  const filProd  = document.getElementById('fil-prod')?.value||'';
+  const filDe    = document.getElementById('fil-de')?.value||'';
+  const filAte   = document.getElementById('fil-ate')?.value||'';
+
+  const filtradas = data.filter(v=>{
+    if (filProd && v.produto!==filProd) return false;
+    if (filDe   && v.data<filDe) return false;
+    if (filAte  && v.data>filAte) return false;
+    return true;
+  }).sort((a,b)=>new Date(b.data)-new Date(a.data));
+
+  const totalGeral = filtradas.reduce((s,v)=>s+v.total,0);
+  const totalItens = filtradas.reduce((s,v)=>s+v.qtd,0);
+
+  document.getElementById('lbl-total').textContent = formatMoney(totalGeral);
+  document.getElementById('lbl-itens').textContent = totalItens;
+  document.getElementById('lbl-count').textContent = filtradas.length;
+
+  const tbody = document.getElementById('tb-vend');
+  if (!tbody) return;
+  if (filtradas.length===0) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="es-icon"></div><h3>Nenhuma venda</h3><p>Registre uma nova venda.</p></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = filtradas.map(v=>`
+    <tr>
+      <td>${formatDate(v.data)}</td>
+      <td style="font-weight:600">${v.produto}</td>
+      <td style="text-align:center">${v.qtd}</td>
+      <td>${formatMoney(v.unitario)}</td>
+      <td style="font-weight:700;color:var(--success)">${formatMoney(v.total)}</td>
+      <td>${v.forma==='pix'?'PIX':v.forma==='dinheiro'?'Dinheiro':'Misto'}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm btn-icon" onclick="editVenda('${v.id}')" title="Editar"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="btn btn-danger btn-sm btn-icon" onclick="deleteVenda('${v.id}')" title="Excluir" style="margin-left:4px">Excluir</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function buildPage() {
+  document.getElementById('page-root').innerHTML = `
+  <div class="app-layout">
+    ${renderSidebar()}
+    <main class="main-content">
+      <div class="page-header">
+        <h1 class="page-title"> Controle de Vendas</h1>
+        <p class="page-subtitle">Registro de arrecadações por venda de produtos</p>
+      </div>
+      <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px">
+        <div class="stat-card green"><span class="stat-icon"></span><span class="stat-value" id="lbl-total">R$ 0,00</span><div class="stat-label">Total Arrecadado</div></div>
+        <div class="stat-card blue"><span class="stat-icon"></span><span class="stat-value" id="lbl-itens">0</span><div class="stat-label">Itens Vendidos</div></div>
+        <div class="stat-card purple"><span class="stat-icon"></span><span class="stat-value" id="lbl-count">0</span><div class="stat-label">Transações</div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Vendas</h2>
+          <button class="btn btn-primary" onclick="newVenda()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> + Nova Venda</button>
+        </div>
+        <div class="filter-bar">
+          <div class="form-group"><label>Produto</label>
+            <select id="fil-prod" onchange="render()">
+              <option value="">Todos</option>
+              <option>Pamonha</option><option>Pão</option><option>Bolo</option>
+              <option>Refrigerante</option><option>Outros</option>
+            </select>
+          </div>
+          <div class="form-group"><label>De</label><input type="date" id="fil-de" onchange="render()"></div>
+          <div class="form-group"><label>Até</label><input type="date" id="fil-ate" onchange="render()"></div>
+          <button class="btn btn-ghost btn-sm" style="align-self:flex-end" onclick="clearFil()">↺</button>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Data</th><th>Produto</th><th>Qtd</th><th>Unit.</th><th>Total</th><th>Pagamento</th><th>Ações</th></tr></thead>
+            <tbody id="tb-vend"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>`;
+  setActiveNav();
+  render();
+}
+
+function newVenda() {
+  editId = null;
+  document.getElementById('modal-v-title').textContent = 'Nova Venda';
+  document.getElementById('v-id').value = '';
+  document.getElementById('v-data').value = today();
+  document.getElementById('v-qtd').value = 1;
+  document.getElementById('v-unit').value = '';
+  document.getElementById('v-obs').value = '';
+  document.getElementById('v-error').style.display = 'none';
+  document.getElementById('v-forma').value = 'pix';
+  calcVenda();
+  openModal('modal-venda');
+}
+
+function editVenda(id) {
+  const v = DB.get(KEYS.VENDAS).find(x=>x.id===id);
+  if (!v) return;
+  editId = id;
+  document.getElementById('modal-v-title').textContent = 'Editar Venda';
+  document.getElementById('v-id').value = v.id;
+  document.getElementById('v-data').value = v.data;
+  document.getElementById('v-produto').value = v.produto;
+  document.getElementById('v-qtd').value = v.qtd;
+  document.getElementById('v-unit').value = v.unitario;
+  document.getElementById('v-obs').value = v.obs||'';
+  document.getElementById('v-forma').value = v.forma||'pix';
+  document.getElementById('v-error').style.display = 'none';
+  calcVenda();
+  openModal('modal-venda');
+}
+
+function deleteVenda(id) {
+  if (!confirm2('Excluir esta venda?')) return;
+  LOG.add('delete','Venda excluída','Vendas');
+  DB.set(KEYS.VENDAS, DB.get(KEYS.VENDAS).filter(x=>x.id!==id));
+  render();
+  toast('Venda excluída.','warning');
+}
+
+function saveVenda() {
+  const data    = document.getElementById('v-data').value;
+  const produto = document.getElementById('v-produto').value;
+  const qtd     = parseInt(document.getElementById('v-qtd').value)||0;
+  const unit    = parseFloat(document.getElementById('v-unit').value)||0;
+  const forma   = document.getElementById('v-forma').value;
+  const obs     = document.getElementById('v-obs').value.trim();
+  const total   = qtd * unit;
+
+  const err = document.getElementById('v-error');
+  function showErr(m){err.innerHTML=`<span></span><span>${m}</span>`;err.style.display='flex';}
+
+  if (!data) return showErr('Informe a data.');
+  if (!qtd || qtd<=0) return showErr('Informe a quantidade.');
+  if (!unit || unit<=0) return showErr('Informe o valor unitário.');
+
+  const rec = { id: editId||DB.genId(), data, produto, qtd, unitario:unit, total, forma, obs };
+  const all = DB.get(KEYS.VENDAS);
+  if (editId) { const idx=all.findIndex(x=>x.id===editId); all[idx]=rec; }
+  else { all.push(rec); }
+  DB.set(KEYS.VENDAS, all);
+
+  // Lançar no caixa
+  if (!editId) {
+    const caixa = DB.get(KEYS.CAIXA);
+    caixa.push({
+      id:DB.genId(), tipo:'entrada', data,
+      descricao:`Venda – ${produto} (${qtd}x)`,
+      categoria:`Venda – ${produto}`, valor:total,
+      forma, pix: forma==='pix'?total:0, dinheiro: forma==='dinheiro'?total:0, obs
+    });
+    DB.set(KEYS.CAIXA, caixa);
+  }
+
+  LOG.add(editId?'update':'create',`Venda de ${produto} — ${formatMoney(total)}`,'Vendas');
+  closeModal('modal-venda');
+  render();
+  toast(editId?'Venda atualizada!':'Venda registrada e entrada lançada no caixa!');
+}
+
+function clearFil() {
+  ['fil-prod','fil-de','fil-ate'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  render();
+}
+
+buildPage();
+</script>
+</body>
+</html>

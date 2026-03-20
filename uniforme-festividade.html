@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Uniforme Festividade — Mensageiros da Paz</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<script src="js/core.js"></script>
+<script>THEME.init();</script>
+<div id="page-root"></div>
+
+<div class="modal-overlay" id="modal-unif">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-unif-title">Novo Registro – Festividade</h2>
+      <button class="modal-close" onclick="closeModal('modal-unif')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div id="unif-error" class="alert alert-danger" style="display:none"></div>
+      <input type="hidden" id="unif-id">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Congregação *</label>
+          <select id="unif-cong"></select>
+        </div>
+        <div class="form-group">
+          <label>Nome *</label>
+          <input type="text" id="unif-nome" placeholder="Nome completo">
+        </div>
+        <div class="form-group">
+          <label>Telefone</label>
+          <input type="text" id="unif-tel" placeholder="(00) 00000-0000">
+        </div>
+        <div class="form-group">
+          <label>Data</label>
+          <input type="date" id="unif-data">
+        </div>
+        <div class="form-group">
+          <label>Valor Total (R$) *</label>
+          <input type="number" id="unif-total" min="0.01" step="0.01" placeholder="0,00" oninput="calcUnif()">
+        </div>
+        <div class="form-group">
+          <label>Pago via PIX (R$)</label>
+          <input type="number" id="unif-pix" min="0" step="0.01" placeholder="0,00" oninput="calcUnif()">
+        </div>
+        <div class="form-group">
+          <label>Pago em Dinheiro (R$)</label>
+          <input type="number" id="unif-din" min="0" step="0.01" placeholder="0,00" oninput="calcUnif()">
+        </div>
+        <div class="form-group full">
+          <div class="payment-summary" id="unif-summary">
+            <div class="payment-row pago"><span class="pkey">Total pago</span><span class="pval" id="s-pago">R$ 0,00</span></div>
+            <div class="payment-row balance"><span class="pkey">Saldo devedor</span><span class="pval" id="s-saldo">R$ 0,00</span></div>
+            <div class="payment-row total"><span class="pkey">Status</span><span class="pval" id="s-status">—</span></div>
+          </div>
+        </div>
+        <div class="form-group full">
+          <label>Observação</label>
+          <textarea id="unif-obs" placeholder="Observação..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-unif')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveUnif()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+AUTH.require(); seedIfEmpty();
+const MODKEY = KEYS.UNIFORME_FEST;
+const MOD_LABEL = 'Uniforme Festividade';
+let editId = null;
+
+function calcUnif() {
+  const total = parseFloat(document.getElementById('unif-total').value)||0;
+  const pix   = parseFloat(document.getElementById('unif-pix').value)||0;
+  const din   = parseFloat(document.getElementById('unif-din').value)||0;
+  const pago  = pix + din;
+  const saldo = Math.max(0, total - pago);
+  const st = getStatus(total, pago);
+  document.getElementById('s-pago').textContent  = formatMoney(pago);
+  document.getElementById('s-saldo').textContent = formatMoney(saldo);
+  document.getElementById('s-status').innerHTML  = statusBadge(st);
+}
+
+function loadCongs(selected='') {
+  const congs = DB.get(KEYS.CONGREGACOES);
+  document.getElementById('unif-cong').innerHTML =
+    congs.map(c=>`<option value="${c.nome}" ${c.nome===selected?'selected':''}>${c.nome}</option>`).join('');
+}
+
+function render() {
+  const data = DB.get(MODKEY);
+  const filCong  = document.getElementById('fil-cong')?.value||'';
+  const filStatus= document.getElementById('fil-status')?.value||'';
+  const filBusca = document.getElementById('fil-busca')?.value.toLowerCase()||'';
+
+  const filtradas = data.filter(u=>{
+    if (filCong && u.congregacao!==filCong) return false;
+    if (filStatus && u.status!==filStatus) return false;
+    if (filBusca && !u.nome.toLowerCase().includes(filBusca)) return false;
+    return true;
+  }).sort((a,b)=>a.nome.localeCompare(b.nome));
+
+  const totalArrecadado = filtradas.reduce((s,u)=>s+(u.pago||0),0);
+  const totalPendente   = filtradas.reduce((s,u)=>s+(u.saldo||0),0);
+
+  const tbody = document.getElementById('tb-unif');
+  if (!tbody) return;
+
+  document.getElementById('lbl-arrec').textContent = formatMoney(totalArrecadado);
+  document.getElementById('lbl-pend').textContent  = formatMoney(totalPendente);
+  document.getElementById('lbl-count').textContent = filtradas.length;
+
+  if (filtradas.length===0) {
+    tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="es-icon"></div><h3>Nenhum registro</h3><p>Adicione um novo.</p></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = filtradas.map(u=>`
+    <tr>
+      <td>${u.congregacao}</td>
+      <td style="font-weight:600">${u.nome}</td>
+      <td>${u.telefone||'—'}</td>
+      <td style="font-weight:700">${formatMoney(u.total)}</td>
+      <td style="color:var(--success)">${formatMoney(u.pago||0)}</td>
+      <td style="color:var(--info)">PIX: ${formatMoney(u.pix||0)}<br>Din: ${formatMoney(u.dinheiro||0)}</td>
+      <td style="color:var(--warning)">${formatMoney(u.saldo||0)}</td>
+      <td>${statusBadge(u.status||'nao_pago')}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm btn-icon" onclick="editUnif('${u.id}')" title="Editar"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="btn btn-danger btn-sm btn-icon" onclick="deleteUnif('${u.id}')" title="Excluir" style="margin-left:4px">Excluir</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function buildPage() {
+  const congs = DB.get(KEYS.CONGREGACOES);
+  document.getElementById('page-root').innerHTML = `
+  <div class="app-layout">
+    ${renderSidebar()}
+    <main class="main-content">
+      <div class="page-header">
+        <h1 class="page-title">${MOD_LABEL}</h1>
+        <p class="page-subtitle">Controle de pagamentos por mulher e congregação</p>
+      </div>
+      <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px">
+        <div class="stat-card green"><span class="stat-icon"></span><span class="stat-value" id="lbl-arrec">R$ 0,00</span><div class="stat-label">Total Arrecadado</div></div>
+        <div class="stat-card red"><span class="stat-icon"></span><span class="stat-value" id="lbl-pend">R$ 0,00</span><div class="stat-label">Total Pendente</div></div>
+        <div class="stat-card blue"><span class="stat-icon"></span><span class="stat-value" id="lbl-count">0</span><div class="stat-label">Registros</div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Registros de Uniforme</h2>
+          <button class="btn btn-primary" onclick="newUnif()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> + Novo Registro</button>
+        </div>
+        <div class="filter-bar">
+          <div class="form-group"><label>Buscar</label><input type="text" id="fil-busca" placeholder="Nome..." oninput="render()"></div>
+          <div class="form-group"><label>Congregação</label>
+            <select id="fil-cong" onchange="render()">
+              <option value="">Todas</option>
+              ${congs.map(c=>`<option>${c.nome}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group"><label>Status</label>
+            <select id="fil-status" onchange="render()">
+              <option value="">Todos</option>
+              <option value="pago">Pago</option>
+              <option value="parcial">Parcial</option>
+              <option value="nao_pago">Pendente</option>
+            </select>
+          </div>
+          <button class="btn btn-ghost btn-sm" style="align-self:flex-end" onclick="clearFil()">↺</button>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr>
+              <th>Congregação</th><th>Nome</th><th>Telefone</th><th>Total</th><th>Pago</th><th>Forma</th><th>Saldo</th><th>Status</th><th>Ações</th>
+            </tr></thead>
+            <tbody id="tb-unif"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>`;
+  setActiveNav();
+  render();
+}
+
+function newUnif() {
+  editId = null;
+  document.getElementById('modal-unif-title').textContent = 'Novo Registro – Festividade';
+  ['unif-id','unif-nome','unif-tel','unif-obs','unif-pix','unif-din','unif-total'].forEach(id=>{
+    document.getElementById(id).value='';
+  });
+  document.getElementById('unif-data').value = today();
+  document.getElementById('unif-error').style.display='none';
+  loadCongs();
+  calcUnif();
+  openModal('modal-unif');
+}
+
+function editUnif(id) {
+  const u = DB.get(MODKEY).find(x=>x.id===id);
+  if (!u) return;
+  editId = id;
+  document.getElementById('modal-unif-title').textContent = 'Editar Registro';
+  document.getElementById('unif-id').value = u.id;
+  document.getElementById('unif-nome').value = u.nome;
+  document.getElementById('unif-tel').value = u.telefone||'';
+  document.getElementById('unif-data').value = u.data||today();
+  document.getElementById('unif-total').value = u.total;
+  document.getElementById('unif-pix').value = u.pix||0;
+  document.getElementById('unif-din').value = u.dinheiro||0;
+  document.getElementById('unif-obs').value = u.obs||'';
+  document.getElementById('unif-error').style.display='none';
+  loadCongs(u.congregacao);
+  calcUnif();
+  openModal('modal-unif');
+}
+
+function deleteUnif(id) {
+  if (!confirm2('Excluir este registro?')) return;
+  LOG.add('delete','Registro de Uniforme Festividade excluído','Uniformes');
+  DB.set(MODKEY, DB.get(MODKEY).filter(x=>x.id!==id));
+  render();
+  toast('Registro excluído.','warning');
+}
+
+function saveUnif() {
+  const cong  = document.getElementById('unif-cong').value;
+  const nome  = document.getElementById('unif-nome').value.trim();
+  const tel   = document.getElementById('unif-tel').value.trim();
+  const data  = document.getElementById('unif-data').value;
+  const total = parseFloat(document.getElementById('unif-total').value)||0;
+  const pix   = parseFloat(document.getElementById('unif-pix').value)||0;
+  const din   = parseFloat(document.getElementById('unif-din').value)||0;
+  const obs   = document.getElementById('unif-obs').value.trim();
+  const pago  = pix + din;
+  const saldo = Math.max(0, total - pago);
+  const status= getStatus(total, pago);
+
+  const err = document.getElementById('unif-error');
+  function showErr(m){err.innerHTML=`<span></span><span>${m}</span>`;err.style.display='flex';}
+
+  if (!nome) return showErr('Informe o nome.');
+  if (!total || total<=0) return showErr('Informe o valor total.');
+  if (pago > total) return showErr('Valor pago não pode ser maior que o total!');
+
+  const rec = { id: editId||DB.genId(), congregacao:cong, nome, telefone:tel, data, total, pix, dinheiro:din, pago, saldo, status, obs };
+  const all = DB.get(MODKEY);
+  if (editId) {
+    const idx = all.findIndex(x=>x.id===editId);
+    all[idx] = rec;
+  } else { all.push(rec); }
+  DB.set(MODKEY, all);
+
+  // Registrar entrada no caixa se pago > 0
+  if (pago > 0 && !editId) {
+    const caixa = DB.get(KEYS.CAIXA);
+    caixa.push({
+      id: DB.genId(), tipo:'entrada', data: data||today(),
+      descricao:`Uniforme Festividade – ${nome}`,
+      categoria:'Uniforme Festividade', valor: pago,
+      forma: pix>0&&din>0?'misto':pix>0?'pix':'dinheiro',
+      pix, dinheiro:din, obs:''
+    });
+    DB.set(KEYS.CAIXA, caixa);
+  }
+
+  LOG.add(editId?'update':'create',`Uniforme Festividade — ${nome} (${formatMoney(pago)} pago)`,'Uniformes');
+  closeModal('modal-unif');
+  render();
+  toast(editId?'Registro atualizado!':'Registro salvo e entrada lançada no caixa!');
+}
+
+function clearFil() {
+  ['fil-busca','fil-cong','fil-status'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  render();
+}
+
+buildPage();
+</script>
+</body>
+</html>

@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caixa — Mensageiros da Paz</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<script src="js/core.js"></script>
+<script>THEME.init();</script>
+<div id="page-root"></div>
+
+<!-- MODAL NOVA MOVIMENTAÇÃO -->
+<div class="modal-overlay" id="modal-mov">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-mov-title">Nova Movimentação</h2>
+      <button class="modal-close" onclick="closeModal('modal-mov')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div id="mov-error" class="alert alert-danger" style="display:none"></div>
+      <input type="hidden" id="mov-id">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Tipo *</label>
+          <select id="mov-tipo" onchange="updateCategorias()">
+            <option value="entrada">Entrada</option>
+            <option value="saida">Saída</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Data *</label>
+          <input type="date" id="mov-data">
+        </div>
+        <div class="form-group full">
+          <label>Descrição *</label>
+          <input type="text" id="mov-desc" placeholder="Descreva a movimentação">
+        </div>
+        <div class="form-group">
+          <label>Categoria *</label>
+          <select id="mov-cat"></select>
+        </div>
+        <div class="form-group">
+          <label>Valor (R$) *</label>
+          <input type="number" id="mov-valor" min="0.01" step="0.01" placeholder="0,00">
+        </div>
+        <div class="form-group" id="grp-forma">
+          <label>Forma de Pagamento</label>
+          <select id="mov-forma" onchange="toggleMisto()">
+            <option value="pix">PIX</option>
+            <option value="dinheiro">Dinheiro</option>
+            <option value="misto">Misto (PIX + Dinheiro)</option>
+          </select>
+        </div>
+        <div id="grp-pix" class="form-group" style="display:none">
+          <label>Valor PIX (R$)</label>
+          <input type="number" id="mov-pix" min="0" step="0.01" placeholder="0,00" oninput="calcMisto()">
+        </div>
+        <div id="grp-din" class="form-group" style="display:none">
+          <label>Valor Dinheiro (R$)</label>
+          <input type="number" id="mov-dinheiro" min="0" step="0.01" placeholder="0,00" oninput="calcMisto()">
+        </div>
+        <div class="form-group full">
+          <label>Observação</label>
+          <textarea id="mov-obs" placeholder="Observação opcional..."></textarea>
+        </div>
+        <div class="form-group full" id="grp-just" style="display:none">
+          <label>Justificativa da Saída *</label>
+          <textarea id="mov-just" placeholder="Obrigatório para saídas — descreva o motivo da despesa..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-mov')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveMov()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+AUTH.require(); seedIfEmpty();
+
+let editId = null;
+const CATS = {
+  entrada: ['Uniforme Festividade','Uniforme Pandeiro','Venda – Pamonha','Venda – Pão','Venda – Outros','Oferta','Contribuição','Outros'],
+  saida: ['Tecido','Material','Decoração','Transporte','Alimentação','Ajuda Financeira','Outros']
+};
+
+function render() {
+  const movs = DB.get(KEYS.CAIXA);
+  const filTipo = document.getElementById('fil-tipo')?.value || '';
+  const filCat  = document.getElementById('fil-cat')?.value  || '';
+  const filDe   = document.getElementById('fil-de')?.value   || '';
+  const filAte  = document.getElementById('fil-ate')?.value  || '';
+  const filBusca= document.getElementById('fil-busca')?.value.toLowerCase() || '';
+
+  const filtradas = movs.filter(m => {
+    if (filTipo && m.tipo !== filTipo) return false;
+    if (filCat  && m.categoria !== filCat) return false;
+    if (filDe   && m.data < filDe) return false;
+    if (filAte  && m.data > filAte) return false;
+    if (filBusca && !m.descricao.toLowerCase().includes(filBusca)) return false;
+    return true;
+  }).sort((a,b)=>new Date(b.data)-new Date(a.data));
+
+  const totalEnt = filtradas.filter(m=>m.tipo==='entrada').reduce((s,m)=>s+m.valor,0);
+  const totalSai = filtradas.filter(m=>m.tipo==='saida').reduce((s,m)=>s+m.valor,0);
+
+  const tbody = document.getElementById('tb-mov');
+  if (!tbody) return;
+
+  if (filtradas.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="es-icon"></div><h3>Nenhuma movimentação</h3><p>Adicione uma nova movimentação.</p></div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtradas.map(m=>`
+    <tr>
+      <td>${formatDate(m.data)}</td>
+      <td><span class="badge ${m.tipo==='entrada'?'badge-success':'badge-danger'}">${m.tipo==='entrada'?'Entrada':'Saída'}</span></td>
+      <td>${m.descricao}</td>
+      <td><span class="badge badge-purple">${m.categoria}</span></td>
+      <td style="font-weight:700;color:${m.tipo==='entrada'?'var(--success)':'var(--danger)'}">
+        ${m.tipo==='entrada'?'+':'-'}${formatMoney(m.valor)}
+      </td>
+      <td>
+        <div style="font-size:12px">
+          ${m.forma==='pix'?'PIX':m.forma==='dinheiro'?'Dinheiro':'Misto'}
+          ${m.forma==='misto'?`<div style="color:var(--text-muted)">PIX: ${formatMoney(m.pix||0)} | Din: ${formatMoney(m.dinheiro||0)}</div>`:''}
+        </div>
+      </td>
+      <td>
+        <button class="btn btn-ghost btn-sm btn-icon" onclick="editMov('${m.id}')" title="Editar"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="btn btn-danger btn-sm btn-icon" onclick="deleteMov('${m.id}')" title="Excluir" style="margin-left:4px">Excluir</button>
+      </td>
+    </tr>
+  `).join('');
+
+  document.getElementById('total-ent').textContent = formatMoney(totalEnt);
+  document.getElementById('total-sai').textContent = formatMoney(totalSai);
+  document.getElementById('total-saldo').textContent = formatMoney(totalEnt - totalSai);
+}
+
+function buildPage() {
+  document.getElementById('page-root').innerHTML = `
+  <div class="app-layout">
+    ${renderSidebar()}
+    <main class="main-content">
+      <div class="page-header">
+        <h1 class="page-title"> Controle de Caixa</h1>
+        <p class="page-subtitle">Registre entradas e saídas financeiras</p>
+      </div>
+
+      <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px">
+        <div class="stat-card green">
+          <span class="stat-icon"></span>
+          <span class="stat-value" id="total-ent">R$ 0,00</span>
+          <div class="stat-label">Total Entradas (filtro)</div>
+        </div>
+        <div class="stat-card red">
+          <span class="stat-icon"></span>
+          <span class="stat-value" id="total-sai">R$ 0,00</span>
+          <div class="stat-label">Total Saídas (filtro)</div>
+        </div>
+        <div class="stat-card purple">
+          <span class="stat-icon"></span>
+          <span class="stat-value" id="total-saldo">R$ 0,00</span>
+          <div class="stat-label">Saldo (filtro)</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Movimentações</h2>
+          <button class="btn btn-primary" onclick="newMov()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> + Nova Movimentação</button>
+        </div>
+
+        <div class="filter-bar">
+          <div class="form-group"><label>Buscar</label><input type="text" id="fil-busca" placeholder="Descrição..." oninput="render()"></div>
+          <div class="form-group"><label>Tipo</label>
+            <select id="fil-tipo" onchange="render()">
+              <option value="">Todos</option>
+              <option value="entrada">Entrada</option>
+              <option value="saida">Saída</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Categoria</label>
+            <select id="fil-cat" onchange="render()">
+              <option value="">Todas</option>
+              ${[...CATS.entrada,...CATS.saida].map(c=>`<option>${c}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group"><label>De</label><input type="date" id="fil-de" onchange="render()"></div>
+          <div class="form-group"><label>Até</label><input type="date" id="fil-ate" onchange="render()"></div>
+          <button class="btn btn-ghost btn-sm" style="align-self:flex-end" onclick="clearFilters()">↺ Limpar</button>
+        </div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead><tr>
+              <th>Data</th><th>Tipo</th><th>Descrição</th><th>Categoria</th><th>Valor</th><th>Pagamento</th><th>Ações</th>
+            </tr></thead>
+            <tbody id="tb-mov"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>`;
+  setActiveNav();
+  render();
+}
+
+function newMov() {
+  editId = null;
+  document.getElementById('modal-mov-title').textContent = 'Nova Movimentação';
+  document.getElementById('mov-id').value = '';
+  document.getElementById('mov-tipo').value = 'entrada';
+  document.getElementById('mov-data').value = today();
+  document.getElementById('mov-desc').value = '';
+  document.getElementById('mov-obs').value = '';
+  document.getElementById('mov-just').value = '';
+  document.getElementById('mov-valor').value = '';
+  document.getElementById('mov-pix').value = '';
+  document.getElementById('mov-dinheiro').value = '';
+  document.getElementById('mov-error').style.display = 'none';
+  updateCategorias();
+  toggleMisto();
+  openModal('modal-mov');
+}
+
+function editMov(id) {
+  const m = DB.get(KEYS.CAIXA).find(x=>x.id===id);
+  if (!m) return;
+  editId = id;
+  document.getElementById('modal-mov-title').textContent = 'Editar Movimentação';
+  document.getElementById('mov-tipo').value = m.tipo;
+  document.getElementById('mov-data').value = m.data;
+  document.getElementById('mov-desc').value = m.descricao;
+  document.getElementById('mov-obs').value = m.obs||'';
+  document.getElementById('mov-just').value = m.justificativa||'';
+  document.getElementById('mov-valor').value = m.valor;
+  document.getElementById('mov-pix').value = m.pix||'';
+  document.getElementById('mov-dinheiro').value = m.dinheiro||'';
+  document.getElementById('mov-error').style.display = 'none';
+  updateCategorias();
+  document.getElementById('mov-cat').value = m.categoria;
+  document.getElementById('mov-forma').value = m.forma||'pix';
+  toggleMisto();
+  openModal('modal-mov');
+}
+
+function deleteMov(id) {
+  if (!confirm2('Excluir esta movimentação?')) return;
+  const data = DB.get(KEYS.CAIXA).filter(x=>x.id!==id);
+  LOG.add('delete',`Movimentação excluída`,'Caixa');
+  DB.set(KEYS.CAIXA, data);
+  render();
+  toast('Movimentação excluída.', 'warning');
+}
+
+function saveMov() {
+  const tipo  = document.getElementById('mov-tipo').value;
+  const data  = document.getElementById('mov-data').value;
+  const desc  = document.getElementById('mov-desc').value.trim();
+  const cat   = document.getElementById('mov-cat').value;
+  const valor = parseFloat(document.getElementById('mov-valor').value);
+  const forma = document.getElementById('mov-forma').value;
+  const obs   = document.getElementById('mov-obs').value.trim();
+  const just  = document.getElementById('mov-just').value.trim();
+  const pix   = parseFloat(document.getElementById('mov-pix').value)||0;
+  const din   = parseFloat(document.getElementById('mov-dinheiro').value)||0;
+
+  const err = document.getElementById('mov-error');
+  function showErr(msg) { err.innerHTML=`<span></span><span>${msg}</span>`; err.style.display='flex'; }
+
+  if (!data) return showErr('Informe a data.');
+  if (!desc) return showErr('Informe a descrição.');
+  if (!valor || valor <= 0) return showErr('Informe um valor válido.');
+  if (tipo === 'saida' && !just) return showErr('Justificativa é obrigatória para saídas!');
+  if (forma === 'misto') {
+    if (pix + din !== valor) return showErr(`Soma PIX (${formatMoney(pix)}) + Dinheiro (${formatMoney(din)}) deve ser igual ao valor total (${formatMoney(valor)}).`);
+  }
+
+  const mov = {
+    id: editId || DB.genId(),
+    tipo, data, descricao: desc, categoria: cat, valor, forma,
+    pix: forma==='pix'?valor : forma==='misto'?pix : 0,
+    dinheiro: forma==='dinheiro'?valor : forma==='misto'?din : 0,
+    obs, justificativa: tipo==='saida'?just:''
+  };
+
+  const all = DB.get(KEYS.CAIXA);
+  if (editId) {
+    const idx = all.findIndex(x=>x.id===editId);
+    all[idx] = mov;
+  } else {
+    all.push(mov);
+  }
+  DB.set(KEYS.CAIXA, all);
+  LOG.add(editId?'update':'create', `${tipo==='entrada'?'Entrada':'Saída'} de ${formatMoney(valor)} registrada — ${desc}`, 'Caixa');
+  closeModal('modal-mov');
+  render();
+  toast(editId ? 'Movimentação atualizada!' : 'Movimentação registrada!');
+}
+
+function updateCategorias() {
+  const tipo = document.getElementById('mov-tipo').value;
+  const sel = document.getElementById('mov-cat');
+  sel.innerHTML = CATS[tipo].map(c=>`<option>${c}</option>`).join('');
+  // Mostrar/esconder justificativa e forma
+  document.getElementById('grp-just').style.display = tipo==='saida'?'flex':'none';
+  document.getElementById('grp-forma').style.display = tipo==='entrada'?'flex':'none';
+  if (tipo==='saida') {
+    document.getElementById('grp-pix').style.display = 'none';
+    document.getElementById('grp-din').style.display = 'none';
+  }
+}
+
+function toggleMisto() {
+  const forma = document.getElementById('mov-forma').value;
+  document.getElementById('grp-pix').style.display = forma==='misto'?'flex':'none';
+  document.getElementById('grp-din').style.display = forma==='misto'?'flex':'none';
+}
+
+function calcMisto() {
+  const pix = parseFloat(document.getElementById('mov-pix').value)||0;
+  const din = parseFloat(document.getElementById('mov-dinheiro').value)||0;
+  // Atualiza campo valor com soma
+  document.getElementById('mov-valor').value = (pix+din).toFixed(2);
+}
+
+function clearFilters() {
+  ['fil-busca','fil-tipo','fil-cat','fil-de','fil-ate'].forEach(id=>{
+    const el = document.getElementById(id);
+    if (el) el.value='';
+  });
+  render();
+}
+
+buildPage();
+</script>
+</body>
+</html>

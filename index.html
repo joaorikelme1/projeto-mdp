@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mensageiros da Paz — Login</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+.login-page { position:relative; overflow:hidden; }
+.login-bg {
+  position:fixed; inset:0; z-index:0;
+  background: radial-gradient(ellipse 70% 60% at 50% -10%, rgba(80,80,80,0.15) 0%, transparent 70%);
+}
+[data-theme="dark"] .login-bg {
+  background: radial-gradient(ellipse 70% 60% at 50% -10%, rgba(255,255,255,0.04) 0%, transparent 70%);
+}
+.login-card { position:relative; z-index:1; }
+.login-divider { height:1px; background:var(--border); margin:18px 0; }
+</style>
+</head>
+<body>
+<script src="js/core.js"></script>
+<script>THEME.init(); seedIfEmpty(); if(AUTH.check()) window.location.href='dashboard.html';</script>
+
+<!-- Modal: Troca de senha no primeiro acesso -->
+<div class="modal-overlay" id="modal-change-pass" style="z-index:9999">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <h2 class="modal-title">🔐 Troque sua Senha</h2>
+    </div>
+    <div class="modal-body">
+      <p style="margin-bottom:16px;color:var(--text-muted);font-size:14px">
+        Este é seu primeiro acesso. Crie uma nova senha para entrar no sistema.
+      </p>
+      <div id="cp-error" class="alert alert-danger" style="display:none"></div>
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>Nova Senha *</label>
+          <input type="password" id="cp-new" placeholder="Digite sua nova senha" autocomplete="new-password">
+        </div>
+        <div class="form-group full">
+          <label>Confirmar Senha *</label>
+          <input type="password" id="cp-confirm" placeholder="Confirme a nova senha" autocomplete="new-password">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="doChangePass()" style="width:100%">
+        Salvar e entrar no sistema
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="login-bg"></div>
+<div class="login-page">
+  <div class="login-card">
+    <div class="login-logo">
+      <img src="img/logo.png" alt="Mensageiros da Paz">
+      <h1>Mensageiros da Paz</h1>
+      <p>Tesouraria — MDP</p>
+    </div>
+
+    <div class="login-theme-row">
+      <button class="login-theme-btn" onclick="THEME.toggle(); updateThemeBtn()">
+        <span id="lt-icon"></span>
+        <span id="lt-txt"></span>
+      </button>
+    </div>
+
+    <div id="login-error" class="alert alert-danger" style="display:none">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span>Usuário ou senha incorretos.</span>
+    </div>
+
+    <div class="form-group" style="margin-bottom:12px">
+      <label>Usuário</label>
+      <div class="input-with-icon">
+        <span class="input-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+        <input type="text" id="username" placeholder="Digite seu usuário" autocomplete="username">
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-bottom:18px">
+      <label>Senha</label>
+      <div class="input-with-icon">
+        <span class="input-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+        <input type="password" id="password" placeholder="Digite sua senha" autocomplete="current-password">
+        <button class="toggle-pass" onclick="togglePass()" id="tp-btn">
+          <svg id="eye-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <button class="btn btn-primary login-btn" onclick="doLogin()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+      Entrar
+    </button>
+    <div class="login-hint">Sistema de Tesouraria — Mensageiros da Paz</div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script>
+seedIfEmpty();
+
+let _pendingUser = null;
+
+function updateThemeBtn(){
+  const dark = THEME.get()==='dark';
+  document.getElementById('lt-icon').innerHTML = dark
+    ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>'
+    : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
+  document.getElementById('lt-txt').textContent = dark ? 'Modo Escuro' : 'Modo Claro';
+}
+updateThemeBtn();
+
+function doLogin(){
+  const u   = document.getElementById('username').value.trim();
+  const p   = document.getElementById('password').value;
+  const err = document.getElementById('login-error');
+  err.style.display = 'none';
+
+  if (AUTH.login(u, p)) {
+    const session = AUTH.getCurrentUser();
+
+    if (session.mustChangePass) {
+      _pendingUser = session;
+      document.getElementById('modal-change-pass').classList.add('open');
+      document.getElementById('cp-new').focus();
+    } else {
+      toast('Bem-vindo(a)!', 'success');
+      setTimeout(() => window.location.href = 'dashboard.html', 700);
+    }
+  } else {
+    err.style.display = 'flex';
+    document.getElementById('password').value = '';
+  }
+}
+
+function doChangePass(){
+  const nova    = document.getElementById('cp-new').value;
+  const confirm = document.getElementById('cp-confirm').value;
+  const err     = document.getElementById('cp-error');
+  function showErr(m){ err.innerHTML = '<span>' + m + '</span>'; err.style.display = 'flex'; }
+
+  err.style.display = 'none';
+  if (!nova || nova.length < 4) return showErr('A senha deve ter ao menos 4 caracteres.');
+  if (nova === 'acess@123')     return showErr('Escolha uma senha diferente da padrão.');
+  if (nova !== confirm)         return showErr('As senhas não conferem.');
+
+  const all = DB.get(KEYS.ADMINS);
+  const idx = all.findIndex(a => a.id === _pendingUser.id);
+  if (idx === -1) return;
+  all[idx].password       = nova;
+  all[idx].mustChangePass = false;
+  DB.set(KEYS.ADMINS, all);
+  LOG.add('update', 'Senha alterada no primeiro acesso', 'Administradores');
+
+  document.getElementById('modal-change-pass').classList.remove('open');
+  toast('Senha definida! Entrando...', 'success');
+  setTimeout(() => window.location.href = 'dashboard.html', 900);
+}
+
+function togglePass(){
+  const inp = document.getElementById('password');
+  const showing = inp.type === 'text';
+  inp.type = showing ? 'password' : 'text';
+  document.getElementById('eye-ico').innerHTML = showing
+    ? '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'
+    : '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const modal = document.getElementById('modal-change-pass');
+  if (modal.classList.contains('open')) doChangePass();
+  else doLogin();
+});
+</script>
+</body>
+</html>
